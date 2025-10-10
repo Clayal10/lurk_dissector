@@ -32,7 +32,6 @@ local minimum_length = {
     [0x0a] = 48,
     [0x0b] = 7,
     [0x0c] = 1,
-    [0x0d] = 37,
     [0x0e] = 5
 }
 
@@ -79,6 +78,30 @@ local room = {
     roomnumber = ProtoField.uint16("lurk.room_roomnumber", "Room Number"),
     roomname = ProtoField.string("lurk.room_roomname", "Room Name"),
     roomdesc = ProtoField.string("lurk.room_desc", "Room Description")
+}
+
+local character = {
+    name = ProtoField.string("lurk.character_name", "Name"),
+    flags = ProtoField.uint8("lurk.character_flags", "Flags"),
+    attack = ProtoField.uint16("lurk.character_attack", "Attack"),
+    defense = ProtoField.uint16("lurk.character_defense", "Defense"),
+    regen = ProtoField.uint16("lurk.character_regen", "Regen"),
+    health = ProtoField.int16("lurk.character_health", "Health"),
+    gold = ProtoField.uint16("lurk.character_gold", "Gold"),
+    roomnumber = ProtoField.uint16("lurk.character_roomnumber", "Room Number"),
+    description = ProtoField.string("lurk.character_description", "Description")
+}
+
+local game = {
+    points = ProtoField.uint16("lurk.game_points", "Initial Points"),
+    limit = ProtoField.uint16("lurk.game_limit", "Stat Limit"),
+    description = ProtoField.string("lurk.game_description", "Description")
+}
+
+local version = {
+    major = ProtoField.uint8("lurk.version_major", "Major Revision"),
+    minor = ProtoField.uint8("lurk.version_minor", "Minor Revision"),
+    size = ProtoField.uint16("lurk.version_size", "Bytes of Extensions")
 }
 
 local function setup(buffer, pinfo, tree)
@@ -162,13 +185,58 @@ local function handle_room(buffer, pinfo, tree)
     return true
 end
 
+local function handle_character(buffer, pinfo, tree)
+    if buffer:len() < minimum_length[0x0a] then
+        return false
+    end
+
+    local subtree = setup(buffer, pinfo, tree)
+
+    subtree:add(character.name, buffer(1,32))
+    subtree:add(character.flags, buffer(33,1)) -- just displays as a byte --
+    subtree:add(character.attack, buffer(34,2):le_uint())
+    subtree:add(character.defense, buffer(36,2):le_uint())
+    subtree:add(character.regen, buffer(38,2):le_uint())
+    subtree:add(character.health, buffer(40,2):le_int())
+    subtree:add(character.gold, buffer(42,2):le_uint())
+    subtree:add(character.roomnumber, buffer(44, 2):le_uint())
+    subtree:add(character.description, buffer(48, buffer:len()-48))
+    return true
+end
+
+local function handle_game(buffer, pinfo, tree)
+    if buffer:len() < minimum_length[0x0b] then
+        return false
+    end
+
+    local subtree = setup(buffer, pinfo, tree)
+
+    subtree:add(game.points, buffer(1, 2):le_uint())
+    subtree:add(game.limit, buffer(3, 2):le_uint())
+    subtree:add(game.description, buffer(7, buffer:len()-7))
+    return true
+end
+
+local function handle_version(buffer, pinfo, tree)
+    if buffer:len() < minimum_length[0x0e] then
+        return false
+    end
+
+    local subtree = setup(buffer, pinfo, tree)
+
+    subtree:add(version.major, buffer(1,1))
+    subtree:add(version.minor, buffer(2,1))
+    subtree:add(version.size, buffer(3,2))
+    return true
+end
+
 local function handle_small_messages(buffer, pinfo, tree)
     setup(buffer, pinfo, tree)
 end
 
+
 lurk.fields = {
     lurk_type, -- all messages have this one field --
-    accept.action,
     message.recipient,
     message.sender,
     message.narrator,
@@ -177,9 +245,25 @@ lurk.fields = {
     pvp.target,
     error.code,
     error.message,
+    accept.action,
     room.roomnumber,
     room.roomname,
-    room.roomdesc
+    room.roomdesc,
+    character.name,
+    character.flags,
+    character.attack,
+    character.defense,
+    character.regen,
+    character.health,
+    character.gold,
+    character.roomnumber,
+    character.description,
+    game.points,
+    game.limit,
+    game.description,
+    version.major,
+    version.minor,
+    version.size
 }
 
 function lurk.dissector(buffer, pinfo, tree)
@@ -200,7 +284,7 @@ function lurk.dissector(buffer, pinfo, tree)
         return handle_changeroom(buffer, pinfo, tree)
     end
 
-    if first_byte == 0x04 then
+    if (first_byte == 0x04) or (first_byte == 0x05) then
         return handle_pvp(buffer, pinfo, tree)
     end
 
@@ -214,6 +298,18 @@ function lurk.dissector(buffer, pinfo, tree)
 
     if (first_byte == 0x09) or (first_byte == 0x0d) then
         return handle_room(buffer, pinfo, tree)
+    end
+
+    if first_byte == 0x0a then
+        return handle_character(buffer, pinfo, tree)
+    end
+
+    if first_byte == 0x0b then
+        return handle_game(buffer, pinfo, tree)
+    end
+
+    if first_byte == 0x0e then
+        return handle_version(buffer, pinfo, tree)
     end
 
     -- this will be used for now since it is better than nothing for all other messages. --

@@ -8,7 +8,7 @@ In Wireshark, open the "About Wireshark" dialog box:
 
 <img width="600px" height="400px" src="./screenshots/wireshark-home.png" alt="Wireshark">
 
-Then, navigate to "folders" and find the plugin directory under "Personal Lua Plugins":
+Then, navigate to "Folders" and find the plugin directory under "Personal Lua Plugins":
 
 <img width="500px" height="500px" src="./screenshots/wireshark-help.png" alt="Wireshark">
 
@@ -16,10 +16,12 @@ You can double click the directory to open it in a file manager where you can pl
 
 ## Fields
 
-A list of all supported fields. Each field includes `Message Type`.
+A list of all supported fields. Each field includes `Message Type`, so any messages where their only content is a `Message Type` will display as such:
 
 - `Message Type`
-    - Displays in text what type of message is being sent by decoding the first byte. This field exists in all LURK messages.
+    - Displays in text what type of message is being sent by decoding the first byte.
+
+The rest of the messages will include the `Message Type` field along with their specific fields.
 
 ### Message
 
@@ -34,6 +36,11 @@ A list of all supported fields. Each field includes `Message Type`.
 - `Room Number`
 
 ### PVP Fight
+
+- `Target`
+    - String name of the target
+
+### Loot
 
 - `Target`
     - String name of the target
@@ -55,5 +62,33 @@ A list of all supported fields. Each field includes `Message Type`.
 - `Room Name`
 - `Room Description`
 
-TBD...
+### Character
 
+- `Name`
+- `Flags`
+    - Shown as a decimal number. Will display as booleans in a future release.
+- `Attack`
+- `Defense`
+- `Regen`
+- `Health`
+- `Gold`
+- `Room Number`
+- `Description`
+
+### Game
+
+- `Initial Points`
+- `Stat Limit`
+- `Game Description`
+
+### Version
+
+- `Major Revision`
+- `Minor Revision`
+- `Bytes of Extensions`
+
+Any other extension data won't be displayed in a field, just as a payload.
+
+## Example
+
+<img width="600" height="400" src="./screenshots/example.png" alt="Wireshark Screenshot">
