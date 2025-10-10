@@ -39,9 +39,35 @@ local minimum_length = {
 -- Defining fields
 local lurk_type = ProtoField.uint8("lurk.msg_type", "Message Type", base.HEX, message_types)
 
+local message = {
+    recipient = ProtoField.string("lurk.message_recipient", "Recipient"),
+    sender = ProtoField.string("lurk.message_sender", "Sender"),
+    narrator = ProtoField.string("lurk.message_narration", "Narration?"),
+    message = ProtoField.string("lurk.message_message", "Message")
+}
+
 local accept = {
     action = ProtoField.uint8("lurk.action", "Accepted Action", base.HEX, message_types)
 }
+
+local function handle_message(buffer, pinfo, tree)
+    if buffer:len() < minimum_length[0x01] then
+        return false
+    end
+
+    pinfo.cols.protocol = "LURK"
+    local subtree = tree:add(lurk, buffer(), "LURK Protocol Data")
+    subtree:add(lurk_type, buffer(0,1))
+    subtree:add(message.recipient, buffer(3, 32))
+    subtree:add(message.sender, buffer(35, 30))
+    if buffer(66,1):uint() == 0x01 then
+        subtree:add(message.narrator, buffer(66, 1), "Yes")
+    else
+        subtree:add(message.narrator, buffer(66, 1), "No")
+    end
+    subtree:add(message.message, buffer(67,buffer:len()-67))
+    return true
+end
 
 local function handle_accept(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x08] then
@@ -63,7 +89,11 @@ end
 
 lurk.fields = {
     lurk_type, -- all messages have this one field --
-    accept.action
+    accept.action,
+    message.recipient,
+    message.sender,
+    message.narrator,
+    message.message
 }
 
 function lurk.dissector(buffer, pinfo, tree)
@@ -74,6 +104,10 @@ function lurk.dissector(buffer, pinfo, tree)
     local first_byte = buffer(0,1):uint()
     if (first_byte < 0x01) or (first_byte > 0xe) then
         return false
+    end
+
+    if first_byte == 0x01 then
+        return handle_message(buffer, pinfo, tree)
     end
 
     if first_byte == 0x08 then

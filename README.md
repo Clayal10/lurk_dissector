@@ -17,7 +17,20 @@ You can double click the directory to open it in a file manager where you can pl
 ## Fields
 
 - `Message Type`
-    - Displays in text what type of message is being sent by decoding the first byte.
+    - Displays in text what type of message is being sent by decoding the first byte. This field exists in all LURK messages.
+
+### Message
+
+- `Recipient`
+- `Sender`
+- `Narration`
+    - Either a "Yes" or "No" string
+- `Message`
+
+### Accept
+
+- `Accepted Action`
+    - Will be a `Message Type` value indicating which type was accepted.
 
 TBD...
 
