@@ -16,6 +16,8 @@ You can double click the directory to open it in a file manager where you can pl
 
 ## Fields
 
+A list of all supported fields. Each field includes `Message Type`.
+
 - `Message Type`
     - Displays in text what type of message is being sent by decoding the first byte. This field exists in all LURK messages.
 
@@ -27,10 +29,31 @@ You can double click the directory to open it in a file manager where you can pl
     - Either a "Yes" or "No" string
 - `Message`
 
+### Change Room
+
+- `Room Number`
+
+### PVP Fight
+
+- `Target`
+    - String name of the target
+
+### Error
+
+- `Error Code`
+    - The error code followed by the description associated with the code
+- `Error Message`
+
 ### Accept
 
 - `Accepted Action`
     - Will be a `Message Type` value indicating which type was accepted.
+
+### Room
+
+- `Room Number`
+- `Room Name`
+- `Room Description`
 
 TBD...
 

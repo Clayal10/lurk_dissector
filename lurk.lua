@@ -36,6 +36,18 @@ local minimum_length = {
     [0x0e] = 5
 }
 
+local error_code = {
+    [0x00] = "0 - Other",
+    [0x01] = "1 - Bad Room",
+    [0x02] = "2 - Player Exists",
+    [0x03] = "3 - Bad Monster",
+    [0x04] = "4 - Stat Error",
+    [0x05] = "5 - Not Ready",
+    [0x06] = "6 - No Target",
+    [0x07] = "7 - No Fight",
+    [0x08] = "8 - No PVP"
+}
+
 -- Defining fields
 local lurk_type = ProtoField.uint8("lurk.msg_type", "Message Type", base.HEX, message_types)
 
@@ -46,18 +58,43 @@ local message = {
     message = ProtoField.string("lurk.message_message", "Message")
 }
 
+local changeroom = {
+    roomnumber = ProtoField.uint16("lurk.changeroom", "Room Number")
+}
+
+local pvp = {
+    target = ProtoField.string("lurk.pvp_target", "Target")
+}
+
+local error = {
+    code = ProtoField.string("lurk.error_code", "Error Code"),
+    message = ProtoField.string("lurk.error_message", "Error Message")
+}
+
 local accept = {
     action = ProtoField.uint8("lurk.action", "Accepted Action", base.HEX, message_types)
 }
+
+local room = {
+    roomnumber = ProtoField.uint16("lurk.room_roomnumber", "Room Number"),
+    roomname = ProtoField.string("lurk.room_roomname", "Room Name"),
+    roomdesc = ProtoField.string("lurk.room_desc", "Room Description")
+}
+
+local function setup(buffer, pinfo, tree)
+    pinfo.cols.protocol = "LURK"
+    local subtree = tree:add(lurk, buffer(), "LURK Protocol Data")
+    subtree:add(lurk_type, buffer(0,1))
+    return subtree
+end
 
 local function handle_message(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x01] then
         return false
     end
 
-    pinfo.cols.protocol = "LURK"
-    local subtree = tree:add(lurk, buffer(), "LURK Protocol Data")
-    subtree:add(lurk_type, buffer(0,1))
+    local subtree = setup(buffer, pinfo, tree)
+
     subtree:add(message.recipient, buffer(3, 32))
     subtree:add(message.sender, buffer(35, 30))
     if buffer(66,1):uint() == 0x01 then
@@ -69,22 +106,64 @@ local function handle_message(buffer, pinfo, tree)
     return true
 end
 
+local function handle_changeroom(buffer, pinfo, tree)
+    if buffer:len() < minimum_length[0x02] then
+        return false
+    end
+
+    local subtree = setup(buffer, pinfo, tree)
+
+    subtree:add(changeroom.roomnumber, buffer(1, 2), buffer(1, 2):le_uint())
+    return true
+end
+
+local function handle_pvp(buffer, pinfo, tree)
+    if buffer:len() < minimum_length[0x04] then
+        return false
+    end
+
+    local subtree = setup(buffer, pinfo, tree)
+    subtree:add(pvp.target, buffer(1,32))
+    return true
+end
+
+local function handle_error(buffer, pinfo, tree)
+    if buffer:len() < minimum_length[0x07] then
+        return false
+    end
+
+    local subtree = setup(buffer, pinfo, tree)
+    subtree:add(error.code, buffer(1, 1), error_code[buffer(1,1):uint()])
+    subtree:add(error.message, buffer(4, buffer:len()-4))
+    return true
+end
+
 local function handle_accept(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x08] then
         return false
     end
 
-    pinfo.cols.protocol = "LURK"
-    local subtree = tree:add(lurk, buffer(), "LURK Protocol Data")
-    subtree:add(lurk_type, buffer(0, 1))
+    local subtree = setup(buffer, pinfo, tree)
+
     subtree:add(accept.action, buffer(1, 1))
     return true
 end
 
+local function handle_room(buffer, pinfo, tree)
+    if buffer:len() < minimum_length[0x09] then
+        return false
+    end
+
+    local subtree = setup(buffer, pinfo, tree)
+
+    subtree:add(room.roomnumber, buffer(1, 2), buffer(1, 2):le_uint())
+    subtree:add(room.roomname, buffer(3, 32))
+    subtree:add(room.roomdesc, buffer(37, buffer:len()-37))
+    return true
+end
+
 local function handle_small_messages(buffer, pinfo, tree)
-    pinfo.cols.protocol = "LURK"
-    local subtree = tree:add(lurk, buffer(), "LURK Protocol Data")
-    subtree:add(lurk_type, buffer(0, 1))
+    setup(buffer, pinfo, tree)
 end
 
 lurk.fields = {
@@ -93,7 +172,14 @@ lurk.fields = {
     message.recipient,
     message.sender,
     message.narrator,
-    message.message
+    message.message,
+    changeroom.roomnumber,
+    pvp.target,
+    error.code,
+    error.message,
+    room.roomnumber,
+    room.roomname,
+    room.roomdesc
 }
 
 function lurk.dissector(buffer, pinfo, tree)
@@ -110,8 +196,24 @@ function lurk.dissector(buffer, pinfo, tree)
         return handle_message(buffer, pinfo, tree)
     end
 
+    if first_byte == 0x02 then
+        return handle_changeroom(buffer, pinfo, tree)
+    end
+
+    if first_byte == 0x04 then
+        return handle_pvp(buffer, pinfo, tree)
+    end
+
+    if first_byte == 0x07 then
+        return handle_error(buffer, pinfo, tree)
+    end
+
     if first_byte == 0x08 then
         return handle_accept(buffer, pinfo, tree)
+    end
+
+    if (first_byte == 0x09) or (first_byte == 0x0d) then
+        return handle_room(buffer, pinfo, tree)
     end
 
     -- this will be used for now since it is better than nothing for all other messages. --
