@@ -127,7 +127,7 @@ end
 
 local function setup(buffer, pinfo, tree)
     pinfo.cols.protocol = "LURK"
-    local subtree = tree:add(lurk, buffer(0, get_length(buffer)), "LURK")
+    local subtree = tree:add(lurk, buffer(0, get_length(buffer)), message_types[buffer(0, 1):uint()])
     subtree:add(lurk_type, buffer(0,1))
     return subtree
 end
