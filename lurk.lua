@@ -118,7 +118,7 @@ local version = {
 -- takes a TVB and determines the length of a single message --
 local function get_length(buffer)
     local t = buffer(0, 1)
-    if t == 0x01 or t == 0x08 or t == 0x9 or t == 0x0a or t == 0x0b or t == 0x0d or t == 0x0e then
+    if t == 0x01 or t == 0x07 or t == 0x9 or t == 0x0a or t == 0x0b or t == 0x0d or t == 0x0e then
         local variable_length = buffer(length_offset[t], 2):le_uint()
         return minimum_length[t] + variable_length
     end
@@ -180,6 +180,13 @@ local function handle_error(buffer, pinfo, tree)
     local subtree = setup(buffer, pinfo, tree)
     subtree:add(error.code, buffer(1, 1), error_code[buffer(1,1):uint()])
     local message_length = buffer(2, 2):le_uint()
+    
+    if message_length+4 > buffer:len() then
+        pinfo.desegment_len = message_length+4-buffer:len()
+        return subtree, buffer:len(), true
+    end
+
+    pinfo.desegment_len = 0
     subtree:add(error.message, buffer(4, message_length))
     return subtree, message_length+4, true
 end
@@ -217,12 +224,12 @@ local function handle_character(buffer, pinfo, tree)
     local subtree = setup(buffer, pinfo, tree)
     subtree:add(character.name, buffer(1,32))
     subtree:add(character.flags, buffer(33,1)) -- just displays as a byte --
-    subtree:add(character.attack, buffer(34,2):le_uint())
-    subtree:add(character.defense, buffer(36,2):le_uint())
-    subtree:add(character.regen, buffer(38,2):le_uint())
-    subtree:add(character.health, buffer(40,2):le_int())
-    subtree:add(character.gold, buffer(42,2):le_uint())
-    subtree:add(character.roomnumber, buffer(44, 2):le_uint())
+    subtree:add(character.attack, buffer(34,2), buffer(34,2):le_uint())
+    subtree:add(character.defense, buffer(36,2), buffer(36,2):le_uint())
+    subtree:add(character.regen, buffer(38,2), buffer(38,2):le_uint())
+    subtree:add(character.health, buffer(40,2), buffer(40,2):le_int())
+    subtree:add(character.gold, buffer(42,2), buffer(42,2):le_uint())
+    subtree:add(character.roomnumber, buffer(44,2), buffer(44, 2):le_uint())
     local description_length = buffer(46,2):le_uint()
     subtree:add(character.description, buffer(48, description_length))
     return subtree, 48+description_length, true
