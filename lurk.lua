@@ -20,19 +20,30 @@ local message_types = {
 -- for checking if the message is too short based on the length --
 -- this prevents messages being sent byte by byte to be invalidated. Must have the whole message --
 local minimum_length = {
-    [0x01] = 67, -- can be much larger than this --
+    [0x01] = 67, -- variable --
     [0x02] = 3,
     [0x03] = 1,
     [0x04] = 33,
     [0x05] = 33,
     [0x06] = 1,
-    [0x07] = 4,
+    [0x07] = 4, -- variable --
     [0x08] = 2, -- can use message_types map for the second byte --
-    [0x09] = 37,
-    [0x0a] = 48,
-    [0x0b] = 7,
+    [0x09] = 37, -- variable | also for connection --
+    [0x0a] = 48, -- variable --
+    [0x0b] = 7, -- variable --
     [0x0c] = 1,
-    [0x0e] = 5
+    [0x0d] = 37, -- variable --
+    [0x0e] = 5 -- variable --
+}
+
+local length_offset = {
+    [0x01] = 1,
+    [0x07] = 2,
+    [0x09] = 35,
+    [0x0a] = 46,
+    [0x0b] = 5,
+    [0x0d] = 35,
+    [0x0e] = 3
 }
 
 local error_code = {
@@ -104,20 +115,30 @@ local version = {
     size = ProtoField.uint16("lurk.version_size", "Bytes of Extensions")
 }
 
+-- takes a TVB and determines the length of a single message --
+local function get_length(buffer)
+    local t = buffer(0, 1)
+    if t == 0x01 or t == 0x07 or t == 0x9 or t == 0x0a or t == 0x0b or t == 0x0d or t == 0x0e then
+        local variable_length = buffer(length_offset[t], 2):le_uint()
+        return minimum_length[t] + variable_length
+    end
+    return minimum_length[t]
+end
+
 local function setup(buffer, pinfo, tree)
     pinfo.cols.protocol = "LURK"
-    local subtree = tree:add(lurk, buffer(), "LURK Protocol Data")
+    local subtree = tree:add(lurk, buffer(0, get_length(buffer)), message_types[buffer(0, 1):uint()])
     subtree:add(lurk_type, buffer(0,1))
     return subtree
 end
 
 local function handle_message(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x01] then
-        return false
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
-
+    local message_length = buffer(1, 2):le_uint()
     subtree:add(message.recipient, buffer(3, 32))
     subtree:add(message.sender, buffer(35, 30))
     if buffer(66,1):uint() == 0x01 then
@@ -125,101 +146,112 @@ local function handle_message(buffer, pinfo, tree)
     else
         subtree:add(message.narrator, buffer(66, 1), "No")
     end
-    subtree:add(message.message, buffer(67,buffer:len()-67))
-    return true
+
+    subtree:add(message.message, buffer(67,message_length))
+    return subtree, 67+message_length, true
 end
 
 local function handle_changeroom(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x02] then
-        return false
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
 
     subtree:add(changeroom.roomnumber, buffer(1, 2), buffer(1, 2):le_uint())
-    return true
+    return subtree, 3, true
 end
 
 local function handle_pvp(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x04] then
-        return false
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
     subtree:add(pvp.target, buffer(1,32))
-    return true
+    return subtree, 33, true
 end
 
 local function handle_error(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x07] then
-        return false
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
     subtree:add(error.code, buffer(1, 1), error_code[buffer(1,1):uint()])
-    subtree:add(error.message, buffer(4, buffer:len()-4))
-    return true
+    local message_length = buffer(2, 2):le_uint()
+    
+    if message_length+4 > buffer:len() then
+        pinfo.desegment_len = message_length+4-buffer:len()
+        return subtree, buffer:len(), true
+    end
+
+    pinfo.desegment_len = 0
+    subtree:add(error.message, buffer(4, message_length))
+    return subtree, message_length+4, true
 end
 
 local function handle_accept(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x08] then
-        return false
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
 
     subtree:add(accept.action, buffer(1, 1))
-    return true
+    return subtree, 2, true
 end
 
 local function handle_room(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x09] then
-        return false
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
 
     subtree:add(room.roomnumber, buffer(1, 2), buffer(1, 2):le_uint())
     subtree:add(room.roomname, buffer(3, 32))
-    subtree:add(room.roomdesc, buffer(37, buffer:len()-37))
-    return true
+    local description_length = buffer(35, 2):le_uint()
+    subtree:add(room.roomdesc, buffer(37, description_length))
+    return subtree, description_length+37, true
 end
 
 local function handle_character(buffer, pinfo, tree)
-    if buffer:len() < minimum_length[0x0a] then
-        return false
+    if buffer:len() < minimum_length[0x0a] then -- if we do at least 1 message, that is good enough
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
-
     subtree:add(character.name, buffer(1,32))
     subtree:add(character.flags, buffer(33,1)) -- just displays as a byte --
-    subtree:add(character.attack, buffer(34,2):le_uint())
-    subtree:add(character.defense, buffer(36,2):le_uint())
-    subtree:add(character.regen, buffer(38,2):le_uint())
-    subtree:add(character.health, buffer(40,2):le_int())
-    subtree:add(character.gold, buffer(42,2):le_uint())
-    subtree:add(character.roomnumber, buffer(44, 2):le_uint())
-    subtree:add(character.description, buffer(48, buffer:len()-48))
-    return true
+    subtree:add(character.attack, buffer(34,2), buffer(34,2):le_uint())
+    subtree:add(character.defense, buffer(36,2), buffer(36,2):le_uint())
+    subtree:add(character.regen, buffer(38,2), buffer(38,2):le_uint())
+    subtree:add(character.health, buffer(40,2), buffer(40,2):le_int())
+    subtree:add(character.gold, buffer(42,2), buffer(42,2):le_uint())
+    subtree:add(character.roomnumber, buffer(44,2), buffer(44, 2):le_uint())
+    local description_length = buffer(46,2):le_uint()
+    subtree:add(character.description, buffer(48, description_length))
+    return subtree, 48+description_length, true
 end
 
 local function handle_game(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x0b] then
-        return false
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
 
     subtree:add(game.points, buffer(1, 2):le_uint())
     subtree:add(game.limit, buffer(3, 2):le_uint())
-    subtree:add(game.description, buffer(7, buffer:len()-7))
-    return true
+    local description_length = buffer(5, 2):le_uint()
+    subtree:add(game.description, buffer(7, description_length))
+    return subtree, description_length+7, true
 end
 
 local function handle_version(buffer, pinfo, tree)
     if buffer:len() < minimum_length[0x0e] then
-        return false
+        return nil, 0, false
     end
 
     local subtree = setup(buffer, pinfo, tree)
@@ -227,11 +259,11 @@ local function handle_version(buffer, pinfo, tree)
     subtree:add(version.major, buffer(1,1))
     subtree:add(version.minor, buffer(2,1))
     subtree:add(version.size, buffer(3,2))
-    return true
+    return subtree, 5, true
 end
 
 local function handle_small_messages(buffer, pinfo, tree)
-    setup(buffer, pinfo, tree)
+    return setup(buffer, pinfo, tree), 1, true
 end
 
 
@@ -266,54 +298,57 @@ lurk.fields = {
     version.size
 }
 
+local function dissect(buffer, pinfo, tree)
+    local first_byte = buffer(0,1):uint()
+    if (first_byte < 0x01) or (first_byte > 0xe) then
+        return nil, 0, false
+    end
+    if first_byte == 0x01 then
+        return handle_message(buffer, pinfo, tree)
+    end
+    if first_byte == 0x02 then
+        return handle_changeroom(buffer, pinfo, tree)
+    end
+    if (first_byte == 0x04) or (first_byte == 0x05) then
+        return handle_pvp(buffer, pinfo, tree)
+    end
+    if first_byte == 0x07 then
+        return handle_error(buffer, pinfo, tree)
+    end
+    if first_byte == 0x08 then
+        return handle_accept(buffer, pinfo, tree)
+    end
+    if (first_byte == 0x09) or (first_byte == 0x0d) then
+        return handle_room(buffer, pinfo, tree)
+    end
+    if first_byte == 0x0a then
+        return handle_character(buffer, pinfo, tree)
+    end
+    if first_byte == 0x0b then
+        return handle_game(buffer, pinfo, tree)
+    end
+    if first_byte == 0x0e then
+        return handle_version(buffer, pinfo, tree)
+    end
+    return handle_small_messages(buffer, pinfo, tree)
+end
+
 function lurk.dissector(buffer, pinfo, tree)
     if buffer:len() < 1 then 
         return false 
     end
 
-    local first_byte = buffer(0,1):uint()
-    if (first_byte < 0x01) or (first_byte > 0xe) then
-        return false
+    local main_tree = tree:add(lurk, buffer(), "LURK Protocol Data")
+
+    local main_offset = 0
+    while buffer:len() - main_offset > 0 do
+        local _, offset, ok = dissect(buffer(main_offset, buffer:len()-main_offset), pinfo, main_tree)
+        if ok == false then
+            return false
+        end
+        main_offset = main_offset + offset
     end
 
-    if first_byte == 0x01 then
-        return handle_message(buffer, pinfo, tree)
-    end
-
-    if first_byte == 0x02 then
-        return handle_changeroom(buffer, pinfo, tree)
-    end
-
-    if (first_byte == 0x04) or (first_byte == 0x05) then
-        return handle_pvp(buffer, pinfo, tree)
-    end
-
-    if first_byte == 0x07 then
-        return handle_error(buffer, pinfo, tree)
-    end
-
-    if first_byte == 0x08 then
-        return handle_accept(buffer, pinfo, tree)
-    end
-
-    if (first_byte == 0x09) or (first_byte == 0x0d) then
-        return handle_room(buffer, pinfo, tree)
-    end
-
-    if first_byte == 0x0a then
-        return handle_character(buffer, pinfo, tree)
-    end
-
-    if first_byte == 0x0b then
-        return handle_game(buffer, pinfo, tree)
-    end
-
-    if first_byte == 0x0e then
-        return handle_version(buffer, pinfo, tree)
-    end
-
-    -- this will be used for now since it is better than nothing for all other messages. --
-    handle_small_messages(buffer, pinfo, tree)
     return true
 end
 

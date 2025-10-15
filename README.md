@@ -14,6 +14,12 @@ Then, navigate to "Folders" and find the plugin directory under "Personal Lua Pl
 
 You can double click the directory to open it in a file manager where you can place the `.lua` file.
 
+## Decoding
+
+Messages sent in multiple parts will potentially be assembled together, but reassembly is not guaranteed, especially when messages are sent with delays between them.
+
+Messages also may be compiled into a single packet, all containing different subtrees labeled with their LURK message type. See the [example](#example) for this case.
+
 ## Fields
 
 A list of all supported fields. Each field includes `Message Type`, so any messages where their only content is a `Message Type` will display as such:
@@ -91,4 +97,4 @@ Any other extension data won't be displayed in a field, just as a payload.
 
 ## Example
 
-<img width="600" height="400" src="./screenshots/example.png" alt="Wireshark Screenshot">
+<img width="800" height="600" src="./screenshots/example.png" alt="Wireshark Screenshot">
